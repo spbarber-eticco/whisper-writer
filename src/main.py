@@ -1,7 +1,8 @@
 import os
 import sys
 import time
-from audioplayer import AudioPlayer
+import argparse
+from playsound import playsound
 from pynput.keyboard import Controller
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QMessageBox
@@ -11,15 +12,12 @@ from result_thread import ResultThread
 from ui.main_window import MainWindow
 from ui.settings_window import SettingsWindow
 from ui.status_window import StatusWindow
-from utils import load_config_schema, load_config_values
+from utils import load_config_schema, load_config_values, save_config
 from transcription import create_local_model
 
 
 class WhisperWriterApp:
-    def __init__(self):
-        """
-        Initialize the application, opening settings window if no configuration file is found.
-        """
+    def __init__(self, show_config=False, run_directly=False):
         self.app = QApplication(sys.argv)
         self.app.setWindowIcon(QIcon(os.path.join('assets', 'ww-logo.png')))
         
@@ -29,16 +27,16 @@ class WhisperWriterApp:
         self.settings_window = SettingsWindow(schema)
         self.settings_window.settingsClosed.connect(self.on_settings_closed)
         
-        if os.path.exists(os.path.join('src', 'config.yaml')):
-            self.initialize_components()
-        else:
-            print('No configuration file found. Opening settings window...')
+        if show_config:
             self.settings_window.show()
+        elif run_directly:
+            self.initialize_components()
+            self.key_listener.start_listening()
+        else:
+            self.initialize_components()
+            self.main_window.show()
 
     def initialize_components(self):
-        """
-        Initialize the components of the application.
-        """
         self.key_listener = KeyListener(self.config)
         self.key_listener.activationKeyPressed.connect(self.activation_key_pressed)
         self.key_listener.activationKeyReleased.connect(self.activation_key_released) 
@@ -56,7 +54,6 @@ class WhisperWriterApp:
             self.status_window = StatusWindow()
         
         self.create_tray_icon()
-        self.main_window.show()
         
     def create_tray_icon(self):
         """
@@ -143,13 +140,10 @@ class WhisperWriterApp:
             self.result_thread.stop()
 
     def on_transcription_complete(self, result):
-        """
-        When the transcription is complete, type the result and start listening for the activation key again.
-        """
         self.typewrite(result, self.config['post_processing']['writing_key_press_delay'])
         
         if self.config['misc']['noise_on_completion']:
-            AudioPlayer(os.path.join('assets', 'beep.wav')).play(block=True)
+            playsound(os.path.join('assets', 'beep.wav'))
         
         if self.config['recording_options']['recording_mode'] == 'continuous':
             self.start_result_thread()
@@ -164,6 +158,7 @@ class WhisperWriterApp:
             self.keyboard.press(letter)
             self.keyboard.release(letter)
             time.sleep(interval)
+        pass
 
     def run(self):
         """
@@ -173,5 +168,10 @@ class WhisperWriterApp:
 
 
 if __name__ == '__main__':
-    app = WhisperWriterApp()
+    parser = argparse.ArgumentParser(description='WhisperWriter')
+    parser.add_argument('--config', action='store_true', help='Show configuration window on startup')
+    parser.add_argument('--run', action='store_true', help='Run directly without showing main window')
+    args = parser.parse_args()
+
+    app = WhisperWriterApp(show_config=args.config, run_directly=args.run)
     app.run()
